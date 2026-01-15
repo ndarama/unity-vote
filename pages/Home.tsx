@@ -110,6 +110,7 @@ export const Home: React.FC = () => {
       <div className="relative bg-brand-navy py-24 px-4 sm:px-6 lg:px-8 text-center overflow-hidden">
         {/* Cover Image Background */}
         <div className="absolute inset-0 z-0">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img 
             src={activeContest?.bannerUrl || "https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&q=80&w=2000"} 
             alt="Unity Summit Stage" 
@@ -161,6 +162,7 @@ export const Home: React.FC = () => {
                     {copiedCategory === cat.name ? <Check className="w-4 h-4 text-green-600" /> : <Share2 className="w-4 h-4" />}
                 </button>
                 <div className="absolute inset-0 bg-brand-navy/20 group-hover:bg-brand-navy/0 transition-colors z-10"></div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={cat.image} alt={cat.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
               </div>
               <div className="p-5 flex-1 flex flex-col justify-between">
@@ -221,3 +223,5 @@ export const Home: React.FC = () => {
     </div>
   );
 };
+
+export default Home;

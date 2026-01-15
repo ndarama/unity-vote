@@ -52,7 +52,7 @@ export const UserGuide: React.FC = () => {
         <div className="bg-brand-navy text-white rounded-xl p-8 md:p-12 text-center">
           <h2 className="text-2xl font-bold mb-4">Need Help?</h2>
           <p className="text-brand-lightGrey mb-6">
-            If you're having trouble receiving the verification code, please check your spam folder or try a different email address.
+            If you&apos;re having trouble receiving the verification code, please check your spam folder or try a different email address.
           </p>
           <a href="mailto:post@unitysummit.no" className="inline-block bg-white text-brand-navy font-semibold px-6 py-3 rounded-lg hover:bg-gray-100 transition-colors">
             Contact Support
@@ -62,3 +62,5 @@ export const UserGuide: React.FC = () => {
     </div>
   );
 };
+
+export default UserGuide;

@@ -72,7 +72,7 @@ export const AdminLogin: React.FC = () => {
             <form onSubmit={handleOtpSubmit} className="space-y-6">
               <div className="text-center mb-4">
                 <p className="text-sm text-brand-grey">Enter the code sent to {email}</p>
-                <p className="text-xs text-brand-lightGrey mt-1">Hint: Use "admin" or "manager"</p>
+                <p className="text-xs text-brand-lightGrey mt-1">Hint: Use &quot;admin&quot; or &quot;manager&quot;</p>
               </div>
               <Input 
                 label="One-Time Password" 
@@ -100,3 +100,5 @@ export const AdminLogin: React.FC = () => {
     </div>
   );
 };
+
+export default AdminLogin;

@@ -182,7 +182,7 @@ export const ContestPage: React.FC = () => {
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filteredActive.length === 0 && filteredWithdrawn.length === 0 ? (
                <div className="col-span-full text-center py-12 text-brand-grey">
-                 No contestants found matching "{searchTerm}"
+                 No contestants found matching &quot;{searchTerm}&quot;
                </div>
             ) : (
               filteredActive.map(person => (
@@ -203,6 +203,7 @@ export const ContestPage: React.FC = () => {
                     className="relative aspect-square overflow-hidden bg-gray-100 cursor-pointer group"
                     onClick={() => setViewingContestant(person)}
                   >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={person.photoUrl} alt={person.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
                        <span className="bg-white/90 text-brand-navy px-4 py-2 rounded-full text-sm font-semibold shadow-lg">View Profile</span>
@@ -253,6 +254,7 @@ export const ContestPage: React.FC = () => {
                   {filteredWithdrawn.map(person => (
                     <Card key={person.id} className="flex flex-col bg-gray-50 border-gray-200 opacity-75 grayscale hover:grayscale-0 transition-all duration-300">
                        <div className="relative aspect-square overflow-hidden bg-gray-200">
+                           {/* eslint-disable-next-line @next/next/no-img-element */}
                            <img src={person.photoUrl} alt={person.name} className="w-full h-full object-cover opacity-80" />
                            <div className="absolute inset-0 flex items-center justify-center">
                                <span className="bg-black/60 text-white px-4 py-2 rounded-full text-sm font-bold border border-white/20 backdrop-blur-sm shadow-xl">
@@ -345,6 +347,7 @@ export const ContestPage: React.FC = () => {
                                     className="relative w-14 h-14 rounded-full overflow-hidden cursor-pointer shrink-0 border-2 border-white shadow-md group-hover:scale-105 transition-transform"
                                     onClick={() => setViewingContestant(person)}
                                 >
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img src={person.photoUrl} alt={person.name} className="w-full h-full object-cover" />
                                 </div>
 
@@ -402,6 +405,7 @@ export const ContestPage: React.FC = () => {
              })}
           </div>
         )}
+      </div>
 
         {/* Bio Modal */}
         <Modal
@@ -414,6 +418,7 @@ export const ContestPage: React.FC = () => {
             <div className="flex flex-col md:flex-row bg-white h-full md:min-h-[450px]">
                {/* Left: Full Vertical Image */}
                <div className="w-full md:w-5/12 h-72 md:h-auto relative shrink-0">
+                 {/* eslint-disable-next-line @next/next/no-img-element */}
                  <img 
                    src={viewingContestant.photoUrl} 
                    alt={viewingContestant.name} 
@@ -481,7 +486,7 @@ export const ContestPage: React.FC = () => {
       >
         {voteStatus === VoteStatus.IDLE || voteStatus === VoteStatus.SENDING_OTP || voteStatus === VoteStatus.ERROR ? (
           <form onSubmit={handleEmailSubmit} className="space-y-4">
-            <p className="text-sm text-brand-grey">Enter your email to verify your vote. We'll send you a secure One-Time Password.</p>
+            <p className="text-sm text-brand-grey">Enter your email to verify your vote. We&apos;ll send you a secure One-Time Password.</p>
             <Input 
               type="email" 
               label="Email Address" 
@@ -554,4 +559,7 @@ export const ContestPage: React.FC = () => {
     </div>
   );
 };
+
+export default ContestPage;
+
 

@@ -14,6 +14,30 @@ import { formatDistanceToNow, format, subDays, subHours, isAfter } from 'date-fn
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
+// Static monitor data - defined outside component for performance
+const MONITOR_DATA = {
+  traffic: Array.from({length: 20}, (_, i) => ({
+    time: `${i}:00`,
+    requests: 1000 + (i * 25),
+    latency: 20 + (i % 10) * 3
+  })),
+  services: [
+    { name: 'PostgreSQL Database', status: 'operational', uptime: '99.99%', latency: '4ms', icon: Database },
+    { name: 'Redis Cache', status: 'operational', uptime: '99.95%', latency: '2ms', icon: Zap },
+    { name: 'API Gateway', status: 'operational', uptime: '100%', latency: '12ms', icon: Server },
+    { name: 'Email Service (SMTP)', status: 'degraded', uptime: '98.50%', latency: '150ms', icon: Mail },
+    { name: 'Storage Buckets', status: 'operational', uptime: '99.99%', latency: '45ms', icon: HardDrive },
+    { name: 'CDN Nodes (Europe)', status: 'operational', uptime: '100%', latency: '12ms', icon: Globe },
+  ],
+  securityLogs: [
+    { id: 1, type: 'Failed Login', ip: '192.168.1.5', location: 'Moscow, RU', time: '2 mins ago', severity: 'medium' },
+    { id: 2, type: 'SQL Injection Attempt', ip: '45.22.11.9', location: 'Beijing, CN', time: '15 mins ago', severity: 'high' },
+    { id: 3, type: 'Admin Login', ip: '10.0.0.5', location: 'Oslo, NO', time: '1 hour ago', severity: 'low' },
+    { id: 4, type: 'Rate Limit Exceeded', ip: '172.16.0.4', location: 'New York, US', time: '2 hours ago', severity: 'low' },
+    { id: 5, type: 'New Device', ip: '82.11.44.2', location: 'London, UK', time: '4 hours ago', severity: 'medium' },
+  ]
+};
+
 export const AdminDashboard: React.FC = () => {
   const router = useRouter();
   const { 
@@ -100,37 +124,8 @@ export const AdminDashboard: React.FC = () => {
     }
   }, [activeContest]);
 
-  // --- Monitor Mock Data ---
-  const monitorData = useMemo(() => {
-    // Generate some random traffic data
-    const traffic = Array.from({length: 20}, (_, i) => ({
-        time: `${i}:00`,
-        requests: Math.floor(Math.random() * 500) + 1000,
-        latency: Math.floor(Math.random() * 50) + 20
-    }));
-
-    const services = [
-        { name: 'PostgreSQL Database', status: 'operational', uptime: '99.99%', latency: '4ms', icon: Database },
-        { name: 'Redis Cache', status: 'operational', uptime: '99.95%', latency: '2ms', icon: Zap },
-        { name: 'API Gateway', status: 'operational', uptime: '100%', latency: '12ms', icon: Server },
-        { name: 'Email Service (SMTP)', status: 'degraded', uptime: '98.50%', latency: '150ms', icon: Mail },
-        { name: 'Storage Buckets', status: 'operational', uptime: '99.99%', latency: '45ms', icon: HardDrive },
-        { name: 'CDN Nodes (Europe)', status: 'operational', uptime: '100%', latency: '12ms', icon: Globe },
-    ];
-
-    const securityLogs = [
-        { id: 1, type: 'Failed Login', ip: '192.168.1.5', location: 'Moscow, RU', time: '2 mins ago', severity: 'medium' },
-        { id: 2, type: 'SQL Injection Attempt', ip: '45.22.11.9', location: 'Beijing, CN', time: '15 mins ago', severity: 'high' },
-        { id: 3, type: 'Admin Login', ip: '10.0.0.5', location: 'Oslo, NO', time: '1 hour ago', severity: 'low' },
-        { id: 4, type: 'Rate Limit Exceeded', ip: '172.16.0.4', location: 'New York, US', time: '2 hours ago', severity: 'low' },
-        { id: 5, type: 'New Device', ip: '82.11.44.2', location: 'London, UK', time: '4 hours ago', severity: 'medium' },
-    ];
-
-    return { traffic, services, securityLogs };
-  }, []);
-
-
-  if (!adminRole) return null;
+  // Use static monitor data
+  const monitorData = MONITOR_DATA;
 
   const allCategories = Array.from(new Set(contestants.map(c => c.category))).sort();
 
@@ -142,7 +137,7 @@ export const AdminDashboard: React.FC = () => {
   }, [contestants, overviewCategory]);
 
   // --- Time Range Filter Logic for Metrics ---
-  const getFilteredVotes = () => {
+  const getFilteredVotes = useMemo(() => {
       const now = new Date();
       let cutoff = new Date(0); // Epoch
 
@@ -157,9 +152,9 @@ export const AdminDashboard: React.FC = () => {
           validContestantIds.has(v.contestantId) && 
           isAfter(v.timestamp, cutoff)
       );
-  };
+  }, [overviewTimeRange, votes, filteredOverviewContestants]);
 
-  const filteredVotes = getFilteredVotes();
+  const filteredVotes = getFilteredVotes;
 
   const filteredTotalVotes = overviewTimeRange === 'all' 
       ? filteredOverviewContestants.reduce((sum, c) => sum + c.votes, 0)
@@ -206,6 +201,87 @@ export const AdminDashboard: React.FC = () => {
     return result;
   }, [contestants, contestantSearch, contestantStatusFilter, contestantCategoryFilter, contestantSort]);
 
+  const top5ContestantsMemo = useMemo(() => {
+    if (filteredOverviewContestants.length === 0) return [];
+    return filteredOverviewContestants
+      .slice()
+      .sort((a, b) => b.votes - a.votes)
+      .slice(0, 5);
+  }, [filteredOverviewContestants]);
+  
+  const trendDataMemo = useMemo(() => {
+    if (top5ContestantsMemo.length === 0) return [];
+    
+    const days = overviewTimeRange === '24h' ? 24 : 7;
+    const isHourly = overviewTimeRange === '24h';
+    const now = new Date();
+    const result: any[] = [];
+
+    for (let i = days - 1; i >= 0; i--) {
+        const d = new Date(now);
+        if (isHourly) d.setHours(now.getHours() - i);
+        else d.setDate(now.getDate() - i);
+        
+        const label = isHourly 
+            ? d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) 
+            : d.toLocaleDateString('en-US', { weekday: 'short' });
+        
+        const point: any = { name: label };
+        let total = 0;
+        
+        for (const c of top5ContestantsMemo) {
+            const seed = c.name.length + i;
+            const base = Math.floor(c.votes / (days * 2)); 
+            const noise = (seed % 10) * 2;
+            const trend = i * 2; 
+            const val = Math.max(0, base + noise + trend); 
+            point[c.name] = val;
+            total += val;
+        }
+        
+        point['total'] = Math.floor(total * 1.2);
+        result.push(point);
+    }
+    
+    return result;
+  }, [overviewTimeRange, top5ContestantsMemo]);
+
+  const drillDownStatsMemo = useMemo(() => {
+      if (!viewingStats) return null;
+      
+      const avgVotesPerHour = Math.floor(viewingStats.votes / 24);
+      const timeSeries = Array.from({length: 24}, (_, i) => ({
+          hour: `${i}:00`,
+          votes: Math.max(2, avgVotesPerHour + ((i * 7) % 10) - 3)
+      }));
+      
+      const countries = [
+          { name: 'Norway', votes: Math.floor(viewingStats.votes * 0.7) },
+          { name: 'Sweden', votes: Math.floor(viewingStats.votes * 0.15) },
+          { name: 'UK', votes: Math.floor(viewingStats.votes * 0.08) },
+          { name: 'USA', votes: Math.floor(viewingStats.votes * 0.05) },
+          { name: 'Other', votes: Math.floor(viewingStats.votes * 0.02) },
+      ];
+      
+      const devices = [
+          { name: 'Mobile', value: Math.floor(viewingStats.votes * 0.65), color: '#EC6822' },
+          { name: 'Desktop', value: Math.floor(viewingStats.votes * 0.30), color: '#062B3F' },
+          { name: 'Tablet', value: Math.floor(viewingStats.votes * 0.05), color: '#9CA9B2' },
+      ];
+      
+      const ipClusters = [
+          { ip: '84.212.45.12', count: 142, location: 'Oslo, NO', status: 'Suspicious' },
+          { ip: '92.110.22.88', count: 45, location: 'Bergen, NO', status: 'Warning' },
+          { ip: '193.212.1.1', count: 28, location: 'Trondheim, NO', status: 'OK' },
+          { ip: '62.14.88.99', count: 12, location: 'Stavanger, NO', status: 'OK' },
+          { ip: '213.11.44.2', count: 8, location: 'Drammen, NO', status: 'OK' },
+      ];
+      
+      return { timeSeries, countries, devices, ipClusters };
+  }, [viewingStats]);
+
+  if (!adminRole) return null;
+
   const displayCategories = contestantCategoryFilter === 'All' 
     ? Array.from(new Set(filteredListContestants.map(c => c.category))).sort()
     : [contestantCategoryFilter];
@@ -241,70 +317,13 @@ export const AdminDashboard: React.FC = () => {
     votes: c.votes
   })).sort((a,b) => b.votes - a.votes).slice(0, 10);
 
-  const top5Contestants = [...filteredOverviewContestants].sort((a, b) => b.votes - a.votes).slice(0, 5);
+  const top5Contestants = top5ContestantsMemo;
   const chartColors = ['#EC6822', '#062B3F', '#10B981', '#8B5CF6', '#F59E0B'];
 
-  const trendData = React.useMemo(() => {
-    const dates: string[] = [];
-    const days = overviewTimeRange === '24h' ? 24 : 7; // Points on x-axis
-    const isHourly = overviewTimeRange === '24h';
-
-    for (let i = days - 1; i >= 0; i--) {
-        const d = new Date();
-        if (isHourly) d.setHours(d.getHours() - i);
-        else d.setDate(d.getDate() - i);
-        
-        dates.push(isHourly 
-            ? d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) 
-            : d.toLocaleDateString('en-US', { weekday: 'short' })
-        );
-    }
-
-    return dates.map((label, idx) => {
-        const point: any = { name: label };
-        let total = 0;
-        top5Contestants.forEach((c, cIdx) => {
-            const seed = c.name.length + idx;
-            const base = Math.floor(c.votes / (days * 2)); 
-            const noise = (seed % 10) * 2;
-            const trend = idx * 2; 
-            const val = Math.max(0, base + noise + trend); 
-            point[c.name] = val;
-            total += val;
-        });
-        point['total'] = Math.floor(total * 1.2);
-        return point;
-    });
-  }, [filteredOverviewContestants, overviewTimeRange]);
+  const trendData = trendDataMemo;
 
   // --- Drill Down Mock Generator ---
-  const drillDownStats = useMemo(() => {
-      if (!viewingStats) return null;
-      const timeSeries = Array.from({length: 24}, (_, i) => ({
-          hour: `${i}:00`,
-          votes: Math.floor(Math.random() * (viewingStats.votes / 20)) + 2
-      }));
-      const countries = [
-          { name: 'Norway', votes: Math.floor(viewingStats.votes * 0.7) },
-          { name: 'Sweden', votes: Math.floor(viewingStats.votes * 0.15) },
-          { name: 'UK', votes: Math.floor(viewingStats.votes * 0.08) },
-          { name: 'USA', votes: Math.floor(viewingStats.votes * 0.05) },
-          { name: 'Other', votes: Math.floor(viewingStats.votes * 0.02) },
-      ];
-      const devices = [
-          { name: 'Mobile', value: Math.floor(viewingStats.votes * 0.65), color: '#EC6822' },
-          { name: 'Desktop', value: Math.floor(viewingStats.votes * 0.30), color: '#062B3F' },
-          { name: 'Tablet', value: Math.floor(viewingStats.votes * 0.05), color: '#9CA9B2' },
-      ];
-      const ipClusters = [
-          { ip: '84.212.45.12', count: 142, location: 'Oslo, NO', status: 'Suspicious' },
-          { ip: '92.110.22.88', count: 45, location: 'Bergen, NO', status: 'Warning' },
-          { ip: '193.212.1.1', count: 28, location: 'Trondheim, NO', status: 'OK' },
-          { ip: '62.14.88.99', count: 12, location: 'Stavanger, NO', status: 'OK' },
-          { ip: '213.11.44.2', count: 8, location: 'Drammen, NO', status: 'OK' },
-      ];
-      return { timeSeries, countries, devices, ipClusters };
-  }, [viewingStats]);
+  const drillDownStats = drillDownStatsMemo;
 
   const categories: string[] = Array.from<string>(new Set(contestants.map(c => c.category))).sort();
 
@@ -851,7 +870,7 @@ export const AdminDashboard: React.FC = () => {
                         <span>Filter & Sort</span>
                         {/* Status Badges for Filter State */}
                         <div className="flex items-center gap-2 ml-4 flex-wrap">
-                            {contestantSearch && <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Search: "{contestantSearch}"</span>}
+                            {contestantSearch && <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Search: &quot;{contestantSearch}&quot;</span>}
                             {contestantStatusFilter !== 'all' && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Status: {contestantStatusFilter}</span>}
                             {contestantCategoryFilter !== 'All' && <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">Cat: {contestantCategoryFilter}</span>}
                         </div>
@@ -991,6 +1010,7 @@ export const AdminDashboard: React.FC = () => {
                                     <td className="px-6 py-4">
                                     <div className="flex items-center gap-3">
                                         <div className="h-10 w-10 rounded-full overflow-hidden bg-gray-100 shrink-0 border border-gray-200 relative group-hover:ring-2 group-hover:ring-brand-orange/20 transition-all">
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
                                         <img src={c.photoUrl} alt="" className="h-full w-full object-cover" />
                                         </div>
                                         <div>
@@ -1185,6 +1205,7 @@ export const AdminDashboard: React.FC = () => {
         {viewingStats && drillDownStats && (
             <div className="space-y-8">
                 <div className="flex flex-col md:flex-row gap-6 items-start">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <div className="w-20 h-20 rounded-full bg-gray-100 overflow-hidden shrink-0 border border-gray-200"><img src={viewingStats.photoUrl} alt="" className="w-full h-full object-cover" /></div>
                     <div><h2 className="text-2xl font-bold text-brand-navy">{viewingStats.name}</h2><p>{viewingStats.votes} Votes</p></div>
                 </div>
@@ -1207,6 +1228,7 @@ export const AdminDashboard: React.FC = () => {
                    {/* Image Preview Area */}
                    <div className="aspect-[3/4] rounded-xl bg-gray-100 border-2 border-dashed border-gray-300 overflow-hidden relative group flex items-center justify-center">
                       {editingContestant.photoUrl ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
                           <img src={editingContestant.photoUrl} alt="Preview" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                       ) : (
                           <ImageIcon className="w-12 h-12 text-gray-300" />
@@ -1352,3 +1374,5 @@ export const AdminDashboard: React.FC = () => {
     </div>
   );
 };
+
+export default AdminDashboard;

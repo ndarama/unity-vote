@@ -67,7 +67,7 @@ export const Navbar: React.FC = () => {
           <div className="flex items-center gap-5 shrink-0">
             {adminRole ? (
               <div className="flex items-center gap-6">
-                 <Link href="/admin" className={`flex items-center gap-2 text-lg font-bold hover:text-brand-orange transition-colors ${pathname.startsWith('/admin') ? 'text-brand-orange' : 'text-gray-300'}`}>
+                 <Link href="/admin" className={`flex items-center gap-2 text-lg font-bold hover:text-brand-orange transition-colors ${pathname?.startsWith('/admin') ? 'text-brand-orange' : 'text-gray-300'}`}>
                   <LayoutGrid className="w-5 h-5" />
                   <span className="hidden lg:inline">Dashboard</span>
                 </Link>
