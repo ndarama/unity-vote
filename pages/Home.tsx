@@ -4,16 +4,19 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Tag, Layers, Calendar, Clock, Share2, Check } from 'lucide-react';
 import { useAppContext } from '../services/AppContext';
-import { Button } from '../components/UI';
+import { Button, SkeletonCategory } from '../components/UI';
 import { format } from 'date-fns';
 
 export const Home: React.FC = () => {
-  const { contests, contestants } = useAppContext();
+  const { contests, contestants, isLoadingContests, isLoadingContestants } = useAppContext();
   const router = useRouter();
   const [copiedCategory, setCopiedCategory] = useState<string | null>(null);
 
   // Use the first active/upcoming contest for hero display
   const activeContest = contests[0];
+
+  // Check if data is still loading
+  const isLoading = isLoadingContests || isLoadingContestants;
 
   // Extract unique categories across all contests
   const categories = useMemo(() => {
@@ -145,7 +148,14 @@ export const Home: React.FC = () => {
           <h2 className="text-2xl font-bold text-brand-navy">Browse by Award Category</h2>
         </div>
         
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        {isLoading ? (
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <SkeletonCategory key={i} />
+            ))}
+          </div>
+        ) : (
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {categories.map((cat) => (
             <div 
               key={`${cat.contestId}-${cat.name}`}
@@ -219,6 +229,7 @@ export const Home: React.FC = () => {
             </div>
           </div>
         </div>
+        )}
       </div>
     </div>
   );

@@ -12,6 +12,17 @@ export interface Contestant {
   contestId: string;
 }
 
+export interface Category {
+  id: string;
+  name: string;
+  description: string;
+  coverPhotoUrl: string;
+  icon?: string;
+  displayOrder: number;
+  isActive: boolean;
+  contestId: string;
+}
+
 export interface Contest {
   id: string;
   title: string;

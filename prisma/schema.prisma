@@ -1,0 +1,155 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Admin {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  name          String
+  role          String    @default("manager") // "admin" or "manager"
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  sessions      Session[]
+  otps          OTP[]
+  
+  @@map("admins")
+}
+
+model Session {
+  id        String   @id
+  userId    String
+  expiresAt DateTime
+  
+  admin     Admin    @relation(references: [id], fields: [userId], onDelete: Cascade)
+  
+  @@index([userId])
+  @@map("sessions")
+}
+
+model OTP {
+  id        String   @id @default(cuid())
+  adminId   String
+  code      String
+  expiresAt DateTime
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  
+  admin     Admin    @relation(references: [id], fields: [adminId], onDelete: Cascade)
+  
+  @@index([adminId])
+  @@index([code])
+  @@map("otps")
+}
+
+model Invitation {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  role      String   @default("manager")
+  token     String   @unique
+  expiresAt DateTime
+  accepted  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  createdBy String
+  
+  @@index([token])
+  @@index([email])
+  @@map("invitations")
+}
+
+model Contest {
+  id          String       @id @default(cuid())
+  title       String
+  description String
+  startDate   DateTime
+  endDate     DateTime
+  status      String       @default("upcoming") // "active", "upcoming", "ended", "paused"
+  bannerUrl   String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  
+  contestants Contestant[]
+  votes       Vote[]
+  categories  Category[]
+  
+  @@index([status])
+  @@map("contests")
+}
+
+model Category {
+  id             String       @id @default(cuid())
+  name           String
+  description    String       @db.Text
+  coverPhotoUrl  String
+  icon           String?
+  displayOrder   Int          @default(0)
+  isActive       Boolean      @default(true)
+  contestId      String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  
+  contest        Contest      @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  contestants    Contestant[]
+  
+  @@index([contestId])
+  @@index([displayOrder])
+  @@map("categories")
+}
+
+model Contestant {
+  id          String   @id @default(cuid())
+  name        String
+  bio         String   @db.Text
+  categoryId  String
+  photoUrl    String
+  votes       Int      @default(0)
+  linkedinUrl String?
+  isVisible   Boolean  @default(true)
+  status      String   @default("active") // "active" or "withdrawn"
+  email       String
+  contestId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  contest     Contest  @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  voteRecords Vote[]
+  
+  @@index([contestId])
+  @@index([categoryId])
+  @@index([status])
+  @@map("contestants")
+}
+
+model Vote {
+  id            String   @id @default(cuid())
+  email         String
+  contestantId  String
+  contestId     String
+  timestamp     DateTime @default(now())
+  status        String   @default("pending") // "pending", "verified", "rejected"
+  ipAddress     String?
+  
+  contestant    Contestant @relation(fields: [contestantId], references: [id], onDelete: Cascade)
+  contest       Contest    @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  
+  @@unique([email, contestId]) // One vote per email per contest
+  @@index([contestantId])
+  @@index([contestId])
+  @@index([email])
+  @@map("votes")
+}

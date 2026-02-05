@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Contest, Contestant, VoteRecord, AdminUser } from '../types';
+import { Contest, Contestant, VoteRecord, AdminUser, Category } from '../types';
 import { INITIAL_CONTESTS, INITIAL_CONTESTANTS } from './mockData';
 
 export type AdminRole = 'admin' | 'manager' | null;
@@ -22,19 +22,28 @@ export interface Notification {
 interface AppContextType {
   contests: Contest[];
   contestants: Contestant[];
+  categories: Category[];
   votes: VoteRecord[];
   adminRole: AdminRole;
   adminUsers: AdminUser[];
+  // Loading states
+  isLoadingContests: boolean;
+  isLoadingContestants: boolean;
+  isLoadingCategories: boolean;
+  // Auth
   loginAdmin: (role: AdminRole) => void;
   logoutAdmin: () => void;
+  // Voting
   castVote: (email: string, contestantId: string, contestId: string) => Promise<{ success: boolean; message: string }>;
   verifyVote: (email: string, otp: string) => Promise<boolean>;
-  updateContestant: (id: string, updates: Partial<Contestant>) => void;
-  toggleContestantVisibility: (id: string) => void;
-  addContestant: (contestant: Contestant) => void;
-  deleteContestant: (id: string) => void;
-  withdrawContestant: (id: string) => void;
   confirmVote: (email: string, contestantId: string, contestId: string) => void;
+  // Contestant Management
+  updateContestant: (id: string, updates: Partial<Contestant>) => Promise<void>;
+  toggleContestantVisibility: (id: string) => Promise<void>;
+  addContestant: (contestant: Contestant) => Promise<void>;
+  deleteContestant: (id: string) => Promise<void>;
+  withdrawContestant: (id: string) => Promise<void>;
+  // Contest Management
   updateContestStatus: (contestId: string, status: Contest['status']) => void;
   updateContest: (contestId: string, updates: Partial<Contest>) => void;
   // User Management
@@ -46,6 +55,8 @@ interface AppContextType {
   notifications: Notification[];
   showNotification: (type: 'success' | 'error' | 'info', message: string) => void;
   removeNotification: (id: string) => void;
+  // Refresh
+  refreshData: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -53,10 +64,74 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [contests, setContests] = useState<Contest[]>(INITIAL_CONTESTS);
   const [contestants, setContestants] = useState<Contestant[]>(INITIAL_CONTESTANTS);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [votes, setVotes] = useState<VoteRecord[]>([]);
   const [adminRole, setAdminRole] = useState<AdminRole>(null);
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>(INITIAL_ADMIN_USERS);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [pendingVoteId, setPendingVoteId] = useState<string | null>(null);
+  
+  // Loading states
+  const [isLoadingContests, setIsLoadingContests] = useState(true);
+  const [isLoadingContestants, setIsLoadingContestants] = useState(true);
+  const [isLoadingCategories, setIsLoadingCategories] = useState(true);
+
+  // Load contests from database
+  const loadContests = async () => {
+    try {
+      setIsLoadingContests(true);
+      const response = await fetch('/api/contests');
+      if (response.ok) {
+        const data = await response.json();
+        setContests(data);
+      }
+    } catch (error) {
+      console.error('Error loading contests:', error);
+    } finally {
+      setIsLoadingContests(false);
+    }
+  };
+
+  // Load contestants from database
+  const loadContestants = async () => {
+    try {
+      setIsLoadingContestants(true);
+      const response = await fetch('/api/contestants');
+      if (response.ok) {
+        const data = await response.json();
+        setContestants(data);
+      }
+    } catch (error) {
+      console.error('Error loading contestants:', error);
+    } finally {
+      setIsLoadingContestants(false);
+    }
+  };
+
+  // Load categories from database
+  const loadCategories = async () => {
+    try {
+      setIsLoadingCategories(true);
+      const response = await fetch('/api/categories');
+      if (response.ok) {
+        const data = await response.json();
+        setCategories(data);
+      }
+    } catch (error) {
+      console.error('Error loading categories:', error);
+    } finally {
+      setIsLoadingCategories(false);
+    }
+  };
+
+  // Refresh all data
+  const refreshData = async () => {
+    await Promise.all([
+      loadContests(),
+      loadContestants(),
+      loadCategories()
+    ]);
+  };
 
   // Load admin state from session storage for persistence on refresh
   useEffect(() => {
@@ -64,6 +139,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (role === 'admin' || role === 'manager') {
       setAdminRole(role);
     }
+    // Load data from database
+    loadContests();
+    loadContestants();
+    loadCategories();
   }, []);
 
   const loginAdmin = (role: AdminRole) => {
@@ -79,75 +158,186 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const castVote = async (email: string, contestantId: string, contestId: string) => {
-    // Check contest status
-    const contest = contests.find(c => c.id === contestId);
-    if (!contest || contest.status !== 'active') {
-       return { success: false, message: 'Voting is currently closed or paused for this contest.' };
+    try {
+      const response = await fetch('/api/votes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          contestantId,
+          contestId,
+          ipAddress: '127.0.0.1' // In production, get from request
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setPendingVoteId(data.voteId);
+        return { success: true, message: data.message };
+      } else {
+        return { success: false, message: data.error };
+      }
+    } catch (error) {
+      console.error('Error casting vote:', error);
+      return { success: false, message: 'Failed to cast vote. Please try again.' };
     }
-
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 800));
-
-    // Check if email already voted for this contest (simplified logic)
-    const existingVote = votes.find(v => v.email === email && v.contestId === contestId && v.status === 'verified');
-    
-    if (existingVote) {
-      return { success: false, message: 'This email has already voted in this contest.' };
-    }
-
-    // In a real app, we would create a "pending" vote here and send email
-    return { success: true, message: 'OTP sent to your email.' };
   };
 
   const verifyVote = async (email: string, otp: string) => {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Mock OTP verification (accepts '123456')
-    if (otp === '123456') {
-      return true;
+    if (!pendingVoteId) {
+      console.error('No pending vote to verify');
+      return false;
     }
-    return false;
+
+    try {
+      const response = await fetch(`/api/votes/${pendingVoteId}/verify`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ otp })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // Reload contestants to get updated vote counts
+        await loadContestants();
+        setPendingVoteId(null);
+        return true;
+      } else {
+        return false;
+      }
+    } catch (error) {
+      console.error('Error verifying vote:', error);
+      return false;
+    }
   };
 
   const confirmVote = (email: string, contestantId: string, contestId: string) => {
-     const newVote: VoteRecord = {
-        id: Math.random().toString(36).substr(2, 9),
-        email,
-        contestantId,
-        contestId,
-        timestamp: Date.now(),
-        status: 'verified'
-      };
+    // This function is now handled by verifyVote API call
+    // Keeping for backward compatibility but it does nothing
+    console.log('Vote confirmed via API for', email);
+  };
+
+  const updateContestant = async (id: string, updates: Partial<Contestant>) => {
+    try {
+      const response = await fetch(`/api/contestants/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
       
-      setVotes(prev => [...prev, newVote]);
+      if (response.ok) {
+        await loadContestants(); // Auto-refresh
+        showNotification('success', 'Contestant updated successfully');
+      } else {
+        const error = await response.json();
+        showNotification('error', error.error || 'Failed to update contestant');
+      }
+    } catch (error) {
+      console.error('Error updating contestant:', error);
+      showNotification('error', 'Failed to update contestant');
+    }
+  };
+
+  const toggleContestantVisibility = async (id: string) => {
+    const contestant = contestants.find(c => c.id === id);
+    if (!contestant) return;
+    
+    try {
+      const response = await fetch(`/api/contestants/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isVisible: !contestant.isVisible })
+      });
       
-      setContestants(prev => prev.map(c => 
-        c.id === contestantId ? { ...c, votes: c.votes + 1 } : c
-      ));
+      if (response.ok) {
+        await loadContestants(); // Auto-refresh
+        const updatedContestant = await response.json();
+        showNotification('success', `Contestant ${updatedContestant.isVisible ? 'shown' : 'hidden'}`);
+      } else {
+        const error = await response.json();
+        showNotification('error', error.error || 'Failed to toggle visibility');
+      }
+    } catch (error) {
+      console.error('Error toggling visibility:', error);
+      showNotification('error', 'Failed to toggle visibility');
+    }
   };
 
-  const updateContestant = (id: string, updates: Partial<Contestant>) => {
-    setContestants(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+  const withdrawContestant = async (id: string) => {
+    const contestant = contestants.find(c => c.id === id);
+    if (!contestant) return;
+    
+    const newStatus = contestant.status === 'withdrawn' ? 'active' : 'withdrawn';
+    
+    try {
+      const response = await fetch(`/api/contestants/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      
+      if (response.ok) {
+        await loadContestants(); // Auto-refresh
+        showNotification('success', `Contestant ${newStatus === 'withdrawn' ? 'withdrawn' : 'reactivated'}`);
+      } else {
+        const error = await response.json();
+        showNotification('error', error.error || 'Failed to update status');
+      }
+    } catch (error) {
+      console.error('Error updating status:', error);
+      showNotification('error', 'Failed to update status');
+    }
   };
 
-  const toggleContestantVisibility = (id: string) => {
-    setContestants(prev => prev.map(c => c.id === id ? { ...c, isVisible: !c.isVisible } : c));
+  const addContestant = async (contestant: Contestant) => {
+    try {
+      const response = await fetch('/api/contestants', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...contestant,
+          status: 'active',
+          votes: 0
+        })
+      });
+      
+      if (response.ok) {
+        await loadContestants(); // Auto-refresh
+        showNotification('success', 'Contestant added successfully');
+      } else {
+        const error = await response.json();
+        showNotification('error', error.error || 'Failed to add contestant');
+      }
+    } catch (error) {
+      console.error('Error adding contestant:', error);
+      showNotification('error', 'Failed to add contestant');
+    }
   };
 
-  const withdrawContestant = (id: string) => {
-    setContestants(prev => prev.map(c => c.id === id ? { ...c, status: c.status === 'withdrawn' ? 'active' : 'withdrawn' } : c));
-  };
-
-  const addContestant = (contestant: Contestant) => {
-    setContestants(prev => [...prev, { ...contestant, status: 'active' }]);
-  };
-
-  const deleteContestant = (id: string) => {
+  const deleteContestant = async (id: string) => {
     if (adminRole !== 'admin') {
-      console.error("Permission denied: Only Admins can delete.");
+      showNotification('error', 'Permission denied: Only Admins can delete.');
       return;
     }
-    setContestants(prev => prev.filter(c => c.id !== id));
+    
+    try {
+      const response = await fetch(`/api/contestants/${id}`, {
+        method: 'DELETE'
+      });
+      
+      if (response.ok) {
+        await loadContestants(); // Auto-refresh
+        showNotification('success', 'Contestant deleted successfully');
+      } else {
+        const error = await response.json();
+        showNotification('error', error.error || 'Failed to delete contestant');
+      }
+    } catch (error) {
+      console.error('Error deleting contestant:', error);
+      showNotification('error', 'Failed to delete contestant');
+    }
   };
 
   const updateContestStatus = (contestId: string, status: Contest['status']) => {
@@ -199,18 +389,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     <AppContext.Provider value={{
       contests,
       contestants,
+      categories,
       votes,
       adminRole,
+      // Loading states
+      isLoadingContests,
+      isLoadingContestants,
+      isLoadingCategories,
+      // Auth
       loginAdmin,
       logoutAdmin,
+      // Voting
       castVote,
       verifyVote,
+      confirmVote,
+      // Contestant Management
       updateContestant,
       toggleContestantVisibility,
       withdrawContestant,
       addContestant,
       deleteContestant,
-      confirmVote,
+      // Contest Management
       updateContestStatus,
       updateContest,
       // User Mgmt
@@ -222,7 +421,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Notifications
       notifications,
       showNotification,
-      removeNotification
+      removeNotification,
+      // Refresh
+      refreshData
     }}>
       {children}
     </AppContext.Provider>

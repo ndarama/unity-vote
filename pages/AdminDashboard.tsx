@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import { Settings, Eye, Edit3, Wand2, Trash2, Users, ChevronRight, Image as ImageIcon, X, Download, Upload, Shield, Mail, KeyRound, CheckCircle2, PlayCircle, PauseCircle, StopCircle, Ban, Linkedin, Calendar, Clock, Save, Activity, Percent, Trophy, TrendingUp, Vote, Server, UserCog, Lock, Globe, Smartphone, AlertTriangle, BarChart2, FileText, Filter, Search, ChevronDown, ChevronUp, SlidersHorizontal, ArrowUpDown, Monitor, Cpu, HardDrive, Wifi, ShieldAlert, Zap, Database } from 'lucide-react';
 import { useAppContext } from '../services/AppContext';
-import { Button, Card, Input, Modal } from '../components/UI';
+import { Button, Card, Input, Modal, SkeletonStats, SkeletonTable } from '../components/UI';
 import { generateBio } from '../services/geminiService';
 import { Contestant, AdminUser, Contest } from '../types';
 import { formatDistanceToNow, format, subDays, subHours, isAfter } from 'date-fns';
@@ -41,10 +41,10 @@ const MONITOR_DATA = {
 export const AdminDashboard: React.FC = () => {
   const router = useRouter();
   const { 
-    adminRole, contests, contestants, votes, 
+    adminRole, contests, contestants, categories, votes, 
     toggleContestantVisibility, updateContestant, addContestant, deleteContestant, withdrawContestant, updateContestStatus, updateContest,
     adminUsers, inviteAdminUser, updateAdminUser, deleteAdminUser, resetAdminUserPassword,
-    showNotification
+    showNotification, isLoadingContests, isLoadingContestants, refreshData
   } = useAppContext();
 
   const [activeTab, setActiveTab] = useState<'overview' | 'contestants' | 'users' | 'system' | 'account' | 'monitor'>('overview');
@@ -305,8 +305,10 @@ export const AdminDashboard: React.FC = () => {
       const velocity = realVotes.filter(v => Date.now() - v.timestamp < 3600000).length;
       const displayVelocity = velocity > 0 ? velocity : (c.votes > 500 ? Math.floor(Math.random() * 15) + 5 : 0);
 
-      const globalTotalVotes = contestants.reduce((sum, x) => sum + x.votes, 0);
-      const share = globalTotalVotes > 0 ? ((c.votes / globalTotalVotes) * 100).toFixed(1) : "0.0";
+      // Calculate share per category instead of overall
+      const categoryContestants = contestants.filter(x => x.category === c.category);
+      const categoryTotalVotes = categoryContestants.reduce((sum, x) => sum + x.votes, 0);
+      const share = categoryTotalVotes > 0 ? ((c.votes / categoryTotalVotes) * 100).toFixed(1) : "0.0";
 
       return { lastVoteTime, displayVelocity, share };
   };
@@ -325,12 +327,13 @@ export const AdminDashboard: React.FC = () => {
   // --- Drill Down Mock Generator ---
   const drillDownStats = drillDownStatsMemo;
 
-  const categories: string[] = Array.from<string>(new Set(contestants.map(c => c.category))).sort();
+  // Get category names for dropdowns
+  const categoryNames: string[] = categories.map(c => c.name).sort();
 
   // --- Handlers ---
   const handleEdit = (contestant: Contestant) => {
     setEditingContestant({ ...contestant });
-    const isKnown = categories.includes(contestant.category);
+    const isKnown = categoryNames.includes(contestant.category);
     setIsCustomCategory(!isKnown && contestant.category !== '');
     setIsEditModalOpen(true);
   };
@@ -360,7 +363,7 @@ export const AdminDashboard: React.FC = () => {
     setEditingContestant({
       id: Math.random().toString(36).substr(2, 9),
       name: '',
-      category: categories.length > 0 ? categories[0] : '',
+      category: categoryNames.length > 0 ? categoryNames[0] : '',
       bio: '',
       photoUrl: 'https://images.unsplash.com/photo-1633332755192-727a05c4013d?w=400&auto=format&fit=crop&q=60',
       votes: 0,
@@ -374,15 +377,15 @@ export const AdminDashboard: React.FC = () => {
     setIsEditModalOpen(true);
   };
 
-  const handleSaveContestant = (e: React.FormEvent) => {
+  const handleSaveContestant = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingContestant) return;
     const exists = contestants.find(c => c.id === editingContestant.id);
     if (exists) {
-      updateContestant(editingContestant.id, editingContestant);
+      await updateContestant(editingContestant.id, editingContestant);
       showNotification('success', 'Contestant updated successfully.');
     } else {
-      addContestant(editingContestant);
+      await addContestant(editingContestant);
       showNotification('success', 'New contestant created.');
     }
     setIsEditModalOpen(false);
@@ -416,7 +419,7 @@ export const AdminDashboard: React.FC = () => {
     const timestamp = format(new Date(), 'yyyy-MM-dd HH:mm:ss');
     const generatedBy = adminUsers.find(u => u.role === adminRole)?.email || 'System';
     const metadata = `Overview Report | Generated: ${timestamp} | Filter: ${overviewCategory} | Time: ${overviewTimeRange}`;
-    const headers = ['ID', 'Name', 'Category', 'Votes', 'Share', 'Velocity', 'Last Vote', 'Status'];
+    const headers = ['ID', 'Name', 'Category', 'Votes', 'Category Share %', 'Velocity', 'Last Vote', 'Status'];
     const rows = filteredOverviewContestants.map(c => {
         const metrics = getContestantMetrics(c);
         return [
@@ -446,7 +449,7 @@ export const AdminDashboard: React.FC = () => {
     doc.text(`Generated: ${format(new Date(), 'MMM dd, yyyy HH:mm')}`, 14, 48);
     doc.text(`Time Range: ${overviewTimeRange.toUpperCase()}`, 14, 53);
     
-    const tableColumn = ["Rank", "Nominee", "Category", "Votes", "Share", "Status"];
+    const tableColumn = ["Rank", "Nominee", "Category", "Votes", "Cat. %", "Status"];
     const sorted = [...filteredOverviewContestants].sort((a, b) => b.votes - a.votes);
     const tableRows = sorted.map((c, i) => {
        const metrics = getContestantMetrics(c);
@@ -624,7 +627,7 @@ export const AdminDashboard: React.FC = () => {
                                 value={overviewCategory}
                                 onChange={(e) => setOverviewCategory(e.target.value)}
                             >
-                                <option value="All">All Categories</option>
+                                <option key="All" value="All">All Categories</option>
                                 {allCategories.map(cat => (
                                     <option key={cat} value={cat}>{cat}</option>
                                 ))}
@@ -637,10 +640,10 @@ export const AdminDashboard: React.FC = () => {
                                 value={overviewTimeRange}
                                 onChange={(e) => setOverviewTimeRange(e.target.value as any)}
                              >
-                                <option value="all">All Time</option>
-                                <option value="30d">Last 30 Days</option>
-                                <option value="7d">Last 7 Days</option>
-                                <option value="24h">Last 24 Hours</option>
+                                <option key="all" value="all">All Time</option>
+                                <option key="30d" value="30d">Last 30 Days</option>
+                                <option key="7d" value="7d">Last 7 Days</option>
+                                <option key="24h" value="24h">Last 24 Hours</option>
                              </select>
                         </div>
                         <div className="md:col-span-2 flex items-end justify-end gap-2">
@@ -656,6 +659,13 @@ export const AdminDashboard: React.FC = () => {
              </div>
 
              {/* Metrics Cards */}
+             {isLoadingContestants || isLoadingContests ? (
+               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+                 {Array.from({ length: 6 }).map((_, i) => (
+                   <SkeletonStats key={i} />
+                 ))}
+               </div>
+             ) : (
              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
                  <Card className="p-4 border-l-4 border-l-blue-500">
                      <p className="text-xs font-medium text-gray-500 uppercase">Total Votes</p>
@@ -682,6 +692,7 @@ export const AdminDashboard: React.FC = () => {
                      <p className="text-xl md:text-2xl font-bold text-brand-navy mt-1">{voteGrowth}%</p>
                  </Card>
              </div>
+             )}
              
              {/* Charts */}
              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -903,10 +914,10 @@ export const AdminDashboard: React.FC = () => {
                                 value={contestantStatusFilter}
                                 onChange={(e) => setContestantStatusFilter(e.target.value as any)}
                              >
-                                <option value="all">All Status</option>
-                                <option value="active">Active Only</option>
-                                <option value="paused">Paused Only</option>
-                                <option value="withdrawn">Withdrawn Only</option>
+                                <option key="all" value="all">All Status</option>
+                                <option key="active" value="active">Active Only</option>
+                                <option key="paused" value="paused">Paused Only</option>
+                                <option key="withdrawn" value="withdrawn">Withdrawn Only</option>
                              </select>
                         </div>
 
@@ -918,7 +929,7 @@ export const AdminDashboard: React.FC = () => {
                                 value={contestantCategoryFilter}
                                 onChange={(e) => setContestantCategoryFilter(e.target.value)}
                              >
-                                <option value="All">All Categories</option>
+                                <option key="All" value="All">All Categories</option>
                                 {allCategories.map(cat => (
                                     <option key={cat} value={cat}>{cat}</option>
                                 ))}
@@ -935,9 +946,9 @@ export const AdminDashboard: React.FC = () => {
                                     value={contestantSort}
                                     onChange={(e) => setContestantSort(e.target.value as any)}
                                  >
-                                    <option value="votesDesc">Votes: High to Low</option>
-                                    <option value="votesAsc">Votes: Low to High</option>
-                                    <option value="nameAsc">Name: A to Z</option>
+                                    <option key="votesDesc" value="votesDesc">Votes: High to Low</option>
+                                    <option key="votesAsc" value="votesAsc">Votes: Low to High</option>
+                                    <option key="nameAsc" value="nameAsc">Name: A to Z</option>
                                  </select>
                              </div>
                         </div>
@@ -945,7 +956,9 @@ export const AdminDashboard: React.FC = () => {
                 )}
              </div>
 
-            {displayCategories.length === 0 ? (
+            {isLoadingContestants ? (
+              <SkeletonTable rows={8} />
+            ) : displayCategories.length === 0 ? (
                <div className="text-center py-16 bg-white rounded-xl shadow-sm border border-gray-100">
                  <h3 className="text-lg font-bold text-brand-navy">No Matches Found</h3>
                  <p className="text-brand-grey mb-4">Try adjusting your filters.</p>
@@ -995,7 +1008,7 @@ export const AdminDashboard: React.FC = () => {
                                 <th className="px-6 py-4">Nominee</th>
                                 <th className="px-6 py-4 w-32">Status</th>
                                 <th className="px-6 py-4 w-24">Votes</th>
-                                <th className="px-6 py-4 w-24">% Share</th>
+                                <th className="px-6 py-4 w-24">Category %</th>
                                 <th className="px-6 py-4 w-32">Velocity</th>
                                 <th className="px-6 py-4 w-36">Last Vote</th>
                                 <th className="px-6 py-4 text-right">Actions</th>
@@ -1315,13 +1328,13 @@ export const AdminDashboard: React.FC = () => {
                       {isCustomCategory ? (
                         <div className="flex gap-2">
                             <Input value={editingContestant.category} onChange={e => setEditingContestant({...editingContestant, category: e.target.value})} required className="flex-1" placeholder="Type new category..." />
-                            <button type="button" onClick={() => { setIsCustomCategory(false); setEditingContestant({ ...editingContestant, category: categories[0] || ''}); }} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5" /></button>
+                            <button type="button" onClick={() => { setIsCustomCategory(false); setEditingContestant({ ...editingContestant, category: categoryNames[0] || ''}); }} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5" /></button>
                         </div>
                      ) : (
                         <div className="relative">
                             <select className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-orange/50 bg-white appearance-none" value={editingContestant.category} onChange={e => { if (e.target.value === '__NEW__') { setIsCustomCategory(true); setEditingContestant({...editingContestant, category: ''}); } else { setEditingContestant({...editingContestant, category: e.target.value}); } }}>
-                                {categories.map(cat => (<option key={cat} value={cat}>{cat}</option>))}
-                                <option value="__NEW__" className="font-bold text-brand-orange">+ Add New Category...</option>
+                                {categoryNames.map(cat => (<option key={cat} value={cat}>{cat}</option>))}
+                                <option key="__NEW__" value="__NEW__" className="font-bold text-brand-orange">+ Add New Category...</option>
                             </select>
                             <ChevronDown className="absolute right-3 top-3 w-4 h-4 text-gray-400 pointer-events-none" />
                         </div>

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { Search, Trophy, Share2, Linkedin, AlertCircle, User, X, Check, TrendingUp, Lock, Ban } from 'lucide-react';
 import { useAppContext } from '../services/AppContext';
-import { Button, Card, Input, Modal, MockCaptcha } from '../components/UI';
+import { Button, Card, Input, Modal, MockCaptcha, SkeletonCard } from '../components/UI';
 import { VoteStatus, Contestant } from '../types';
 
 export const ContestPage: React.FC = () => {
@@ -12,9 +12,12 @@ export const ContestPage: React.FC = () => {
   const id = params?.id;
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { contests, contestants, castVote, verifyVote, confirmVote: commitVote } = useAppContext();
+  const { contests, contestants, castVote, verifyVote, confirmVote: commitVote, isLoadingContests, isLoadingContestants } = useAppContext();
   
   const contest = contests.find(c => c.id === id);
+  
+  // Check if data is still loading
+  const isLoading = isLoadingContests || isLoadingContestants;
   
   // Get all visible contestants for this contest
   const allContestants = contestants.filter(c => c.isVisible && c.contestId === id);
@@ -62,7 +65,7 @@ export const ContestPage: React.FC = () => {
   // Apply search filter to both lists
   const filterFn = (c: Contestant) => 
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    c.category.toLowerCase().includes(searchTerm.toLowerCase());
+    (c.category && c.category.toLowerCase().includes(searchTerm.toLowerCase()));
 
   const filteredActive = activeContestants.filter(filterFn);
   const filteredWithdrawn = withdrawnContestants.filter(filterFn);
@@ -131,7 +134,7 @@ export const ContestPage: React.FC = () => {
   };
 
   // Get unique categories for leaderboard grouping
-  const uniqueCategories = Array.from(new Set(activeContestants.map(c => c.category))).sort();
+  const uniqueCategories = Array.from(new Set(activeContestants.map(c => c.category).filter(Boolean))).sort();
 
   return (
     <div className="min-h-screen bg-brand-bg">
@@ -179,6 +182,13 @@ export const ContestPage: React.FC = () => {
         {/* Contestants Grid */}
         {activeTab === 'contestants' && (
           <>
+          {isLoading ? (
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <SkeletonCard key={i} />
+              ))}
+            </div>
+          ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filteredActive.length === 0 && filteredWithdrawn.length === 0 ? (
                <div className="col-span-full text-center py-12 text-brand-grey">
@@ -241,9 +251,10 @@ export const ContestPage: React.FC = () => {
               ))
             )}
           </div>
+          )}
 
           {/* Withdrawn Section */}
-          {filteredWithdrawn.length > 0 && (
+          {!isLoading && filteredWithdrawn.length > 0 && (
              <div className="mt-16 border-t border-gray-200 pt-10">
                <div className="flex items-center gap-3 mb-6 opacity-70">
                    <Ban className="w-6 h-6 text-gray-500" />
